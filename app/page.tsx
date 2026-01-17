@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { X, Github } from "lucide-react";
 import { parseIntent } from "@/resolver/parseIntent";
 import { resolveComponent, type ResolvedView } from "@/resolver/resolveComponent";
 import { RenderedButton } from "@/renderer/renderButton";
@@ -252,6 +252,20 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen w-full bg-background relative">
       <Toaster position="bottom-right" />
+      
+      {/* Header */}
+      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Design Model</h1>
+        <a
+          href="https://github.com/sherizan/design-model"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Github className="h-4 w-4" />
+          <span>View on GitHub</span>
+        </a>
+      </header>
       
       {/* Row 1: Prompt and Controls */}
       <div className="border-b border-border p-4">
@@ -670,6 +684,21 @@ export default function Home() {
           </Card>
         </div>
       </div>
+      
+      {/* Footer */}
+      <footer className="border-t border-border px-6 py-3 flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">
+          Experiment by{" "}
+          <a
+            href="https://sherizan.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground transition-colors underline"
+          >
+            sherizan
+          </a>
+        </p>
+      </footer>
     </div>
   );
 }
