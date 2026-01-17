@@ -7,6 +7,8 @@ Design Models are built to be **executed**.
 
 This repository is a small, focused proof of that idea.
 
+![Design Model](public/design-model.png)
+
 ---
 
 ## What is this?
