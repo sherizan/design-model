@@ -1,0 +1,48 @@
+{
+  "component": "Button",
+  "props": {
+    "label": {
+      "type": "string",
+      "required": true
+    },
+    "variant": {
+      "type": "string",
+      "enum": ["primary", "secondary", "ghost"],
+      "default": "primary"
+    },
+    "size": {
+      "type": "string",
+      "enum": ["sm", "md"],
+      "default": "md"
+    },
+    "disabled": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "styleSlots": ["container", "label"],
+  "states": {
+    "hover": {
+      "description": "Applied when mouse hovers over button",
+      "styleOverrides": {
+        "primary": "backgroundColor: darken(10%)",
+        "secondary": "backgroundColor: darken(5%)",
+        "ghost": "backgroundColor: rgba(0, 0, 0, 0.05)"
+      }
+    },
+    "active": {
+      "description": "Applied when button is pressed",
+      "styleOverrides": {
+        "primary": "backgroundColor: darken(15%), transform: scale(0.98)",
+        "secondary": "backgroundColor: darken(10%), transform: scale(0.98)",
+        "ghost": "backgroundColor: rgba(0, 0, 0, 0.1), transform: scale(0.98)"
+      }
+    },
+    "focus": {
+      "description": "Applied when button receives keyboard focus",
+      "styleOverrides": {
+        "all": "outline: 2px solid, outlineColor: textColor, outlineOffset: 2px"
+      }
+    }
+  }
+}

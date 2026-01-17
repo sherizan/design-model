@@ -1,0 +1,23 @@
+{
+  "onlyOnePrimaryPerView": true,
+  "ghostHasNoBackground": true,
+  "disabledOpacity": 0.4,
+  "sizeMap": {
+    "sm": {
+      "px": "spacing.sm",
+      "py": "spacing.xs"
+    },
+    "md": {
+      "px": "spacing.md",
+      "py": "spacing.sm"
+    }
+  },
+  "secondaryUsesSurface": true,
+  "errorMessages": {
+    "multiplePrimaryButtons": "Only one primary button is allowed per view",
+    "ghostWithBackground": "Ghost buttons must not have a background",
+    "invalidVariant": "Invalid button variant",
+    "invalidSize": "Invalid button size",
+    "missingLabel": "Button label is required"
+  }
+}
