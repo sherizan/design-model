@@ -1,31 +1,164 @@
-# Design Model Demo
+# Design Model
 
-A public demo application showcasing the Design Model architecture for generating UI components from design tokens, contracts, and constraints.
+**An executable evolution of design systems.**
 
-## What This Demo Proves
+Design Systems were built to be **read**.  
+Design Models are built to be **executed**.
 
-This demo proves that **Design Models are executable**. It demonstrates:
+This repository is a small, focused proof of that idea.
 
-1. **Deterministic Parsing**: Natural language prompts are parsed into structured component definitions without AI calls
-2. **Constraint Enforcement**: Design constraints (e.g., "only one primary button per view") are enforced at resolution time
-3. **Token Resolution**: Design tokens are resolved to actual CSS values
-4. **Pure Rendering**: Components are rendered from resolved tokens without external UI library dependencies
+---
 
-## Architecture
+## What is this?
 
-```
-Tokens + Contract + Constraints -> Parser -> Resolver -> Resolved JSON -> Renderer -> UI
-```
+This repo demonstrates a **Design Model**:  
+a design system expressed as an executable model that AI tools and engineers can safely operate inside.
 
-### Architecture Flow
+Instead of documenting rules and hoping they’re followed,  
+a Design Model **enforces design decisions at runtime**.
 
-1. **Tokens** (`tokens/tokens.json`): Semantic design tokens (colors, spacing, typography, etc.)
-2. **Contract** (`contracts/button.json`): Component contract defining props, types, and defaults
-3. **Constraints** (`constraints/button.rules.json`): Executable design rules (e.g., onlyOnePrimaryPerView)
-4. **Parser** (`resolver/parseIntent.ts`): Converts natural language prompts to structured intent
-5. **Resolver** (`resolver/resolveComponent.ts`): Validates props, enforces constraints, resolves tokens to CSS values
-6. **Renderer** (`renderer/renderButton.tsx`): Pure function that renders `<button>` with inline styles
-7. **UI**: Preview canvas displays the rendered component
+The demo intentionally starts small — with a single Button component — to make the idea clear without distraction.
+
+---
+
+## Why does this exist?
+
+AI-assisted coding tools can generate UI extremely fast.
+
+AI:
+- doesn’t read design documentation unless enforced
+- doesn’t remember conventions
+- doesn’t prevent invalid UI from being produced.
+
+The result is often inconsistent, off-brand, or unshippable UI.
+
+Design Models address this by turning design decisions into **machine-enforceable rules**.
+
+---
+
+## The Design Model (3 parts)
+
+A Design Model has three executable layers:
+
+### 1. Tokens  
+Define what styles are allowed  
+(colors, spacing, typography, radius, etc.)
+
+### 2. Contracts  
+Define what components exist and what props are valid  
+(variants, sizes, defaults)
+
+### 3. Constraints  
+Define what decisions are *not allowed*  
+(e.g. only one primary action per view)
+
+UI is not *generated*.  
+It is **resolved** against these rules.
+
+---
+
+## How is this different from a design system?
+
+| Design System | Design Model |
+|--------------|-------------|
+| Documentation-first | Execution-first |
+| Built for humans | Built for humans and AI |
+| Rules are advisory | Rules are enforced |
+| Violations caught in review | Violations blocked at runtime |
+
+Design systems explain decisions.  
+Design models **enforce** them.
+
+---
+
+## Is this just a component library or Storybook?
+
+No.
+
+- Component libraries ship components  
+- Storybook documents usage  
+- Design Models govern what is allowed to exist
+
+AI can ignore documentation.  
+It cannot ignore enforcement.
+
+---
+
+## Why does the demo start with no constraints?
+
+Because constraints are **authored**, not assumed.
+
+In the demo:
+1. UI renders freely
+2. You add a constraint
+3. The same prompt now resolves differently
+
+Nothing else changes — not the renderer, not the intent.
+
+This makes governance explicit and intentional.
+
+---
+
+## Why only a Button?
+
+On purpose.
+
+Buttons are:
+- universally understood
+- easy to misuse
+- easy to govern
+- visually obvious when wrong
+
+If a model can’t govern a Button, it won’t scale to more complex UI.
+
+---
+
+## What happens when a constraint is violated?
+
+The system does not crash or fail.
+
+Instead it:
+- acknowledges the intent
+- explains which constraint applies
+- offers structured suggestions for AI agents (e.g. downgrade to secondary)
+
+This is **assistive governance**, not policing.
+
+---
+
+## How does this work with AI-assisted coding tools?
+
+The Design Model sits **between the AI and the code**:
+
+Intent / Prompt
+↓
+AI assistant or agent
+↓
+Design Model (tokens + contracts + constraints)
+↓
+Resolved UI spec (valid by construction)
+↓
+Code generation
+
+AI proposes.  
+The Design Model decides.
+
+---
+
+## What should I try?
+
+1. Run the demo
+2. Create two primary buttons → works
+3. Add constraint: “Only one primary button per view”
+4. Run the same prompt → constrained resolution
+5. Remove the constraint → works again
+
+Then try:
+- adding a new constraint
+- adding a new component
+- observing how behavior changes without touching the renderer
+
+---
 
 ### ⚠️ IMPORTANT: shadcn/ui Usage
 
@@ -39,30 +172,23 @@ Tokens + Contract + Constraints -> Parser -> Resolver -> Resolved JSON -> Render
 
 **The renderer MUST NOT import or depend on shadcn components.** The preview output for components (e.g., Button) must be a plain `<button>` (or our own internal component), styled using resolved tokens (inline styles or simple class mapping).
 
-## Project Structure
+---
 
-```
-design-model/
-├── app/
-│   ├── layout.tsx          # Root layout
-│   └── page.tsx             # Demo shell (uses shadcn/ui)
-├── tokens/
-│   └── tokens.json          # Semantic design tokens
-├── contracts/
-│   └── button.json          # Button component contract
-├── constraints/
-│   ├── button.rules.json    # Button constraint rules (base)
-│   └── button.templates.ts  # Constraint template catalog
-├── resolver/
-│   ├── parseIntent.ts       # Parse user intent from prompt
-│   └── resolveComponent.ts  # Resolve component from contract + tokens
-├── renderer/
-│   └── renderButton.tsx     # Render button (NO shadcn imports)
-└── components/
-    └── ui/                   # shadcn/ui components (shell only)
-```
+## Contributing
 
-## Getting Started
+This repo is intentionally small and focused.
+
+Good contributions:
+- a new component
+- a new constraint
+- a clearer rule or remediation
+
+The goal is not feature completeness.  
+The goal is clarity.
+
+---
+
+## Try the demo
 
 1. Install dependencies:
 ```bash
@@ -111,24 +237,7 @@ Create two primary buttons
    - Prevent rendering (nodes array is empty)
 6. Remove the constraint pill and Run again → it will pass
 
-## Author Constraints as Pills
-
-The Constraints tab uses a **pill-based authoring system** that proves Design Models are structured and deterministic:
-
-- **Constraints start empty by default** - no constraints are active initially
-- **Add constraints from template catalog** - type to search and select from predefined constraint templates
-- **Constraints are structured templates** - no free-form text or AI generation, only deterministic templates
-- **Live constraint enforcement** - constraints are applied immediately when you click Run
-
-### Example Workflow
-
-1. Start with empty constraints (no pills shown)
-2. Prompt: "Create two primary buttons" → **PASSES** (renders two buttons)
-3. Add constraint pill: "Only one primary button per view"
-4. Run same prompt → **FAILS** with clear error message
-5. Remove constraint pill → **PASSES** again
-
-This demonstrates that constraints are **executable rules** that can be toggled on/off, proving the deterministic nature of Design Models.
+---
 
 ## Technology Stack
 
@@ -136,6 +245,8 @@ This demonstrates that constraints are **executable rules** that can be toggled 
 - **Tailwind CSS** - Styling
 - **shadcn/ui** - Demo shell UI components only
 - **React** - Component rendering
+
+---
 
 ## Development
 
@@ -146,3 +257,16 @@ The resolver and renderer logic are fully implemented. The system:
 - Enforces design constraints
 - Resolves design tokens to CSS values
 - Renders pure HTML elements with inline styles
+
+---
+
+## One-line summary
+
+**Design Systems scale consistency.  
+Design Models scale decision-making.**
+
+---
+
+## License
+
+MIT
