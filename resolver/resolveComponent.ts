@@ -3,6 +3,7 @@
  */
 
 import type { ParsedIntent } from "./parseIntent";
+import type { AppliedConstraint, Decision, Violation } from "./types";
 import tokensData from "../tokens/tokens.json";
 import contractData from "../contracts/button.json";
 import constraintsData from "../constraints/button.rules.json";
@@ -13,21 +14,28 @@ export interface ResolveOptions {
   constraints?: typeof constraintsData;
 }
 
+export interface ResolvedNode {
+  id: string;
+  type: "Button";
+  props: {
+    label: string;
+    variant: string;
+    size: string;
+    disabled: boolean;
+  };
+  styles: Record<string, string | number>;
+  trace: Array<{ key: string; value: string | number; source: string }>;
+  decisions?: Decision[];
+}
+
 export interface ResolvedView {
   viewId: string;
-  nodes: Array<{
-    id: string;
-    type: "Button";
-    props: {
-      label: string;
-      variant: string;
-      size: string;
-      disabled: boolean;
-    };
-    styles: Record<string, string | number>;
-    trace: Array<{ key: string; value: string | number; source: string }>;
-  }>;
+  nodes: ResolvedNode[];
   errors: Array<{ code: string; message: string }>;
+  violations: Violation[];
+  enabledConstraints: Record<string, boolean>;
+  appliedConstraints: AppliedConstraint[];
+  // Backward compatibility: keep activeConstraints for now (deprecated)
   activeConstraints?: Record<string, any>;
 }
 
@@ -71,7 +79,27 @@ export function resolveComponent(intent: ParsedIntent, options?: ResolveOptions)
   const constraints = options?.constraints ?? constraintsData;
 
   const errors: Array<{ code: string; message: string }> = [];
+  const violations: Violation[] = [];
+  const appliedConstraints: AppliedConstraint[] = [];
   const nodes: ResolvedView["nodes"] = [];
+  
+  // Build enabledConstraints from constraints object
+  const enabledConstraints: Record<string, boolean> = {};
+  if (constraints.onlyOnePrimaryPerView !== undefined) {
+    enabledConstraints.onlyOnePrimaryPerView = constraints.onlyOnePrimaryPerView === true;
+  }
+  if ((constraints as any).maxPrimaryButtonsPerView !== undefined) {
+    enabledConstraints.maxPrimaryButtonsPerView = typeof (constraints as any).maxPrimaryButtonsPerView === "number";
+  }
+  if (constraints.ghostHasNoBackground !== undefined) {
+    enabledConstraints.ghostHasNoBackground = constraints.ghostHasNoBackground === true;
+  }
+  if (constraints.secondaryUsesSurface !== undefined) {
+    enabledConstraints.secondaryUsesSurface = constraints.secondaryUsesSurface === true;
+  }
+  if (constraints.disabledOpacity !== undefined) {
+    enabledConstraints.disabledOpacity = typeof constraints.disabledOpacity === "number";
+  }
 
   // Validate components against contract
   for (let i = 0; i < intent.components.length; i++) {
@@ -134,16 +162,40 @@ export function resolveComponent(intent: ParsedIntent, options?: ResolveOptions)
     const constraintId = ("maxPrimaryButtonsPerView" in constraints && typeof (constraints as any).maxPrimaryButtonsPerView === "number")
       ? "maxPrimaryButtonsPerView" 
       : "onlyOnePrimaryPerView";
+    const errorMessage = `Constraint violation (${constraintId}): Maximum ${maxPrimaryAllowed} primary button${maxPrimaryAllowed === 1 ? "" : "s"} allowed per view, but ${primaryButtons.length} found`;
     errors.push({
       code: "multiplePrimaryButtons",
-      message: `Constraint violation (${constraintId}): Maximum ${maxPrimaryAllowed} primary button${maxPrimaryAllowed === 1 ? "" : "s"} allowed per view, but ${primaryButtons.length} found`,
+      message: errorMessage,
+    });
+    // Also add to violations
+    violations.push({
+      code: "multiplePrimaryButtons",
+      message: errorMessage,
+      constraintId,
+      nodeIds: primaryButtons.map((_, idx) => {
+        const componentIndex = intent.components.findIndex(c => c === primaryButtons[idx]);
+        return `button-${componentIndex}`;
+      }),
     });
     // If constraint fails, return empty nodes
     return {
       viewId: intent.viewId,
       nodes: [],
       errors,
+      violations,
+      enabledConstraints,
+      appliedConstraints,
+      // Backward compatibility
+      activeConstraints: constraints,
     };
+  }
+
+  // Convert other errors to violations
+  for (const error of errors) {
+    violations.push({
+      code: error.code,
+      message: error.message,
+    });
   }
 
   // If there are validation errors, return empty nodes
@@ -152,6 +204,11 @@ export function resolveComponent(intent: ParsedIntent, options?: ResolveOptions)
       viewId: intent.viewId,
       nodes: [],
       errors,
+      violations,
+      enabledConstraints,
+      appliedConstraints,
+      // Backward compatibility
+      activeConstraints: constraints,
     };
   }
 
@@ -266,6 +323,7 @@ export function resolveComponent(intent: ParsedIntent, options?: ResolveOptions)
       },
       styles,
       trace,
+      // decisions will be added by suggestFixes if auto-fix is applied
     });
   }
 
@@ -273,6 +331,10 @@ export function resolveComponent(intent: ParsedIntent, options?: ResolveOptions)
     viewId: intent.viewId,
     nodes,
     errors,
+    violations,
+    enabledConstraints,
+    appliedConstraints,
+    // Backward compatibility: keep activeConstraints for now
     activeConstraints: constraints,
   };
 }

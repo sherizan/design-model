@@ -18,6 +18,12 @@ import { RenderedButton } from "@/renderer/renderButton";
 import { loadBaseModel, mergeDeep, type BaseModel } from "@/lib/modelRuntime";
 import { BUTTON_CONSTRAINT_TEMPLATES, type ConstraintTemplate } from "@/constraints/button.templates";
 import contractData from "@/contracts/button.json";
+import { validate as validateViewSpec } from "@/resolver/validate";
+import { suggestFixes, applyFixesToIntent } from "@/resolver/suggestFixes";
+import type { AppliedConstraint, Decision } from "@/resolver/types";
+import { computeHealth } from "@/lib/health/computeHealth";
+import type { HealthSummary } from "@/lib/health/types";
+import { HealthDialog } from "@/components/health/HealthDialog";
 
 type Status = "ready" | "success" | "error";
 
@@ -46,10 +52,27 @@ export default function Home() {
   const [activeConstraints, setActiveConstraints] = useState<Array<{ templateId: string; value?: boolean | number }>>([]);
   const [constraintSearchInput, setConstraintSearchInput] = useState("");
 
+  // Auto-fix flow state
+  const [autoFixResult, setAutoFixResult] = useState<{
+    initialViolations: any[];
+    suggestedFixes: any[];
+    appliedConstraints: AppliedConstraint[];
+    finalResolved: ResolvedView | null;
+    nodeDecisions: Record<string, Decision[]>;
+  } | null>(null);
+  const [showAutoFixFlow, setShowAutoFixFlow] = useState(false);
+  const [visibleSteps, setVisibleSteps] = useState<Set<number>>(new Set());
+  const [currentStep, setCurrentStep] = useState<number | null>(null);
+
+  // Health dashboard state
+  const [healthDialogOpen, setHealthDialogOpen] = useState(false);
+  const [lastSynced, setLastSynced] = useState<number>(Date.now());
+
   // Load base model on mount
   useEffect(() => {
     const model = loadBaseModel();
     setBaseModel(model);
+    setLastSynced(Date.now());
     // Initialize form state from base model
     setTokenFormState({
       colorPrimary: model.tokens.color.primary,
@@ -88,6 +111,35 @@ export default function Home() {
     return mergeDeep(baseConstraints, constraintOverrides);
   }, [baseModel, constraintOverrides, activeConstraints.length]);
 
+  // Build enabledConstraints from activeConstraints pills
+  const enabledConstraints = useMemo(() => {
+    const enabled: Record<string, boolean> = {};
+    for (const active of activeConstraints) {
+      const template = BUTTON_CONSTRAINT_TEMPLATES.find((t) => t.id === active.templateId);
+      if (template) {
+        if (template.kind === "toggle") {
+          enabled[active.templateId] = active.value === true;
+        } else {
+          enabled[active.templateId] = active.value !== undefined && active.value !== null;
+        }
+      }
+    }
+    return enabled;
+  }, [activeConstraints]);
+
+  // Compute health summary
+  const healthSummary = useMemo<HealthSummary | null>(() => {
+    if (!baseModel) return null;
+    return computeHealth({
+      baseModel,
+      resolvedView,
+      activeConstraints,
+      derivedTokens: derivedTokens || null,
+      derivedConstraints: derivedConstraints || null,
+      lastSynced,
+    });
+  }, [baseModel, resolvedView, activeConstraints, derivedTokens, derivedConstraints, lastSynced]);
+
   const handleRun = () => {
     if (!baseModel || !derivedTokens || !derivedConstraints) return;
 
@@ -121,10 +173,160 @@ export default function Home() {
       setResolvedView(resolvedWithActiveConstraints);
       setErrors(resolved.errors.map((e) => e.message));
       setStatus(resolved.errors.length > 0 ? "error" : "success");
+      setAutoFixResult(null);
+      setShowAutoFixFlow(false);
     } catch (error) {
       setErrors([error instanceof Error ? error.message : "Unknown error occurred"]);
       setResolvedView(null);
       setStatus("error");
+      setAutoFixResult(null);
+      setShowAutoFixFlow(false);
+    }
+  };
+
+  const handleRunWithAutoFix = async () => {
+    if (!baseModel || !derivedTokens || !derivedConstraints) return;
+
+    // Reset state
+    setVisibleSteps(new Set());
+    setCurrentStep(null);
+    setShowAutoFixFlow(true);
+
+    try {
+      // Step 1: Parse intent
+      const intent = parseIntent(prompt);
+      
+      // Step 2: Validate (show step 1)
+      setCurrentStep(1);
+      await new Promise(resolve => setTimeout(resolve, 800)); // Simulate AI thinking
+      
+      const validationResult = validateViewSpec(intent, enabledConstraints, {
+        tokens: derivedTokens,
+        contract: baseModel.contract,
+        constraints: derivedConstraints,
+      });
+
+      const initialViolations = validationResult.violations;
+      setVisibleSteps(new Set([1]));
+
+      // Step 3: If violations exist, suggest fixes (show step 2)
+      let suggestedFixes: any[] = [];
+      let appliedConstraints: AppliedConstraint[] = [];
+      let nodeDecisions: Record<string, Decision[]> = {};
+      let finalIntent = intent;
+      let finalResolved: ResolvedView | null = null;
+
+      if (initialViolations.length > 0) {
+        setCurrentStep(2);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate AI analyzing
+        
+        const fixes = suggestFixes({
+          intent,
+          violations: initialViolations,
+          enabledConstraints,
+        });
+
+        suggestedFixes = fixes.flatMap(f => f.patches);
+        setVisibleSteps(new Set([1, 2]));
+
+        // Step 4: Apply fixes (show step 3)
+        if (suggestedFixes.length > 0) {
+          setCurrentStep(3);
+          await new Promise(resolve => setTimeout(resolve, 800)); // Simulate AI applying
+          
+          finalIntent = applyFixesToIntent(intent, suggestedFixes);
+          
+          // Collect applied constraints and decisions
+          for (const fix of fixes) {
+            appliedConstraints.push(fix.appliedConstraint);
+            for (const { nodeId, decision } of fix.decisions) {
+              if (!nodeDecisions[nodeId]) {
+                nodeDecisions[nodeId] = [];
+              }
+              nodeDecisions[nodeId].push(decision);
+            }
+          }
+          setVisibleSteps(new Set([1, 2, 3]));
+        }
+
+        // Step 5: Show node decisions (step 4)
+        if (Object.keys(nodeDecisions).length > 0) {
+          setCurrentStep(4);
+          await new Promise(resolve => setTimeout(resolve, 600));
+          setVisibleSteps(new Set([1, 2, 3, 4]));
+        }
+      }
+
+      // Step 6: Re-validate (show step 5)
+      setCurrentStep(5);
+      await new Promise(resolve => setTimeout(resolve, 800)); // Simulate AI re-validating
+      
+      const finalValidation = validateViewSpec(finalIntent, enabledConstraints, {
+        tokens: derivedTokens,
+        contract: baseModel.contract,
+        constraints: derivedConstraints,
+      });
+
+      // Step 7: Resolve final view
+      if (finalValidation.valid) {
+        finalResolved = resolveComponent(finalIntent, {
+          tokens: derivedTokens,
+          contract: baseModel.contract,
+          constraints: derivedConstraints,
+        });
+
+        // Add decisions to nodes
+        for (const node of finalResolved.nodes) {
+          if (nodeDecisions[node.id]) {
+            node.decisions = nodeDecisions[node.id];
+          }
+        }
+
+        // Add applied constraints
+        finalResolved.appliedConstraints = appliedConstraints;
+      }
+
+      setVisibleSteps(new Set([1, 2, 3, 4, 5]));
+      setCurrentStep(null); // All steps complete
+
+      setAutoFixResult({
+        initialViolations,
+        suggestedFixes,
+        appliedConstraints,
+        finalResolved,
+        nodeDecisions,
+      });
+
+      // Update main resolved view to show final result
+      if (finalResolved) {
+        const activeConstraintsObject = activeConstraints.reduce((acc, active) => {
+          const template = BUTTON_CONSTRAINT_TEMPLATES.find((t) => t.id === active.templateId);
+          if (template) {
+            const patch = template.toPatch(active.value);
+            return mergeDeep(acc, patch);
+          }
+          return acc;
+        }, {} as Record<string, any>);
+        
+        setResolvedView({
+          ...finalResolved,
+          activeConstraints: activeConstraintsObject,
+        });
+        setErrors([]);
+        setStatus("success");
+      } else {
+        setResolvedView(null);
+        setErrors(finalValidation.violations.map(v => v.message));
+        setStatus("error");
+      }
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : "Unknown error occurred"]);
+      setResolvedView(null);
+      setStatus("error");
+      setAutoFixResult(null);
+      setShowAutoFixFlow(false);
+      setVisibleSteps(new Set());
+      setCurrentStep(null);
     }
   };
 
@@ -256,15 +458,37 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-border px-6 py-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold">Design Model</h1>
-        <a
-          href="https://github.com/sherizan/design-model"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <Github className="h-4 w-4" />
-          <span>View on GitHub</span>
-        </a>
+        <div className="flex items-center gap-4">
+          {healthSummary && (
+            <Button
+              onClick={() => setHealthDialogOpen(true)}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+              aria-label="Model Health"
+            >
+              <div
+                className={`h-2 w-2 rounded-full ${
+                  healthSummary.status === "healthy"
+                    ? "bg-green-500"
+                    : healthSummary.status === "needsAttention"
+                    ? "bg-yellow-500"
+                    : "bg-red-500"
+                }`}
+              />
+              <span>Health {healthSummary.overallScore}</span>
+            </Button>
+          )}
+          <a
+            href="https://github.com/sherizan/design-model"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Github className="h-4 w-4" />
+            <span>View on GitHub</span>
+          </a>
+        </div>
       </header>
       
       {/* Row 1: Prompt and Controls */}
@@ -283,9 +507,12 @@ export default function Home() {
               className="resize-none"
             />
           </div>
-          <div className="min-w-[200px]">
-            <Button onClick={handleRun} className="w-full">
+          <div className="flex gap-2 min-w-[200px]">
+            <Button onClick={handleRun} className="flex-1">
               Run
+            </Button>
+            <Button onClick={handleRunWithAutoFix} variant="outline" className="flex-1">
+              Run with MCP (Auto-fix)
             </Button>
           </div>
         </div>
@@ -528,6 +755,7 @@ export default function Home() {
                   <TabsTrigger value="json">Resolved JSON</TabsTrigger>
                   <TabsTrigger value="diff">Diff</TabsTrigger>
                   <TabsTrigger value="errors">Errors</TabsTrigger>
+                  {showAutoFixFlow && <TabsTrigger value="autofix">Auto-fix Flow</TabsTrigger>}
                 </TabsList>
                 <TabsContent value="json" className="h-[calc(100%-3rem)] mt-4">
                   <ScrollArea className="h-full w-full rounded-md border border-border p-4">
@@ -628,6 +856,160 @@ export default function Home() {
                     )}
                   </ScrollArea>
                 </TabsContent>
+                {showAutoFixFlow && (
+                  <TabsContent value="autofix" className="h-[calc(100%-3rem)] mt-4">
+                    <ScrollArea className="h-full w-full rounded-md border border-border p-4">
+                      <div className="space-y-4">
+                        {/* Step 1: Initial Violations */}
+                        <div className={`transition-opacity duration-500 ${visibleSteps.has(1) ? "opacity-100" : "opacity-30"}`}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <h3 className="text-sm font-semibold">Step 1: Constraint Validation</h3>
+                            {currentStep === 1 && (
+                              <span className="text-xs text-muted-foreground animate-pulse">Agent is validating...</span>
+                            )}
+                            {visibleSteps.has(1) && currentStep !== 1 && (
+                              <span className="text-xs text-green-600 dark:text-green-400">✓ Complete</span>
+                            )}
+                          </div>
+                          {visibleSteps.has(1) && autoFixResult ? (
+                            autoFixResult.initialViolations.length > 0 ? (
+                              <div className="space-y-2">
+                                <p className="text-sm text-muted-foreground">Constraint triggered:</p>
+                                <ul className="space-y-1">
+                                  {autoFixResult.initialViolations.map((violation, idx) => (
+                                    <li key={idx} className="text-sm bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded p-2">
+                                      <span className="font-medium">{violation.constraintId || violation.code}:</span> {violation.message}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No violations found</p>
+                            )
+                          ) : (
+                            <div className="text-sm text-muted-foreground italic">Waiting for validation...</div>
+                          )}
+                        </div>
+
+                        {/* Step 2: Suggested Fixes */}
+                        {autoFixResult && autoFixResult.suggestedFixes.length > 0 && (
+                          <div className={`transition-opacity duration-500 ${visibleSteps.has(2) ? "opacity-100" : "opacity-30"}`}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="text-sm font-semibold">Step 2: Analyzing & Suggesting Fixes</h3>
+                              {currentStep === 2 && (
+                                <span className="text-xs text-muted-foreground animate-pulse">Agent is analyzing violations...</span>
+                              )}
+                              {visibleSteps.has(2) && currentStep !== 2 && (
+                                <span className="text-xs text-green-600 dark:text-green-400">✓ Complete</span>
+                              )}
+                            </div>
+                            {visibleSteps.has(2) ? (
+                              <div className="space-y-2">
+                                {autoFixResult.suggestedFixes.map((fix, idx) => (
+                                  <div key={idx} className="text-sm bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded p-2">
+                                    <span className="font-medium">Patch {idx + 1}:</span> {fix.op} {fix.path} → {JSON.stringify(fix.value)}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-muted-foreground italic">Waiting for fix suggestions...</div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Step 3: Applied Constraints */}
+                        {autoFixResult && autoFixResult.appliedConstraints.length > 0 && (
+                          <div className={`transition-opacity duration-500 ${visibleSteps.has(3) ? "opacity-100" : "opacity-30"}`}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="text-sm font-semibold">Step 3: Applying Resolution</h3>
+                              {currentStep === 3 && (
+                                <span className="text-xs text-muted-foreground animate-pulse">Agent is applying fixes...</span>
+                              )}
+                              {visibleSteps.has(3) && currentStep !== 3 && (
+                                <span className="text-xs text-green-600 dark:text-green-400">✓ Complete</span>
+                              )}
+                            </div>
+                            {visibleSteps.has(3) ? (
+                              <div className="space-y-2">
+                                {autoFixResult.appliedConstraints.map((applied, idx) => (
+                                  <div key={idx} className="text-sm bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded p-2">
+                                    <div className="font-medium mb-1">{applied.id}</div>
+                                    <div className="text-muted-foreground">{applied.resolution || applied.message}</div>
+                                    {applied.targets && applied.targets.length > 0 && (
+                                      <div className="text-xs mt-1">Targets: {applied.targets.join(", ")}</div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-muted-foreground italic">Waiting for resolution application...</div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Step 4: Node Decisions */}
+                        {autoFixResult && Object.keys(autoFixResult.nodeDecisions).length > 0 && (
+                          <div className={`transition-opacity duration-500 ${visibleSteps.has(4) ? "opacity-100" : "opacity-30"}`}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="text-sm font-semibold">Step 4: Recording Decisions</h3>
+                              {currentStep === 4 && (
+                                <span className="text-xs text-muted-foreground animate-pulse">Agent is recording decisions...</span>
+                              )}
+                              {visibleSteps.has(4) && currentStep !== 4 && (
+                                <span className="text-xs text-green-600 dark:text-green-400">✓ Complete</span>
+                              )}
+                            </div>
+                            {visibleSteps.has(4) ? (
+                              <div className="space-y-2">
+                                {Object.entries(autoFixResult.nodeDecisions).map(([nodeId, decisions]) => (
+                                  <div key={nodeId} className="text-sm border rounded p-2">
+                                    <div className="font-medium mb-1">{nodeId}</div>
+                                    {decisions.map((decision, idx) => (
+                                      <div key={idx} className="text-xs text-muted-foreground ml-2">
+                                        <span className="font-medium">{decision.type}:</span> {decision.action} ({decision.reason})
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-muted-foreground italic">Waiting for decision recording...</div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Step 5: Final State */}
+                        <div className={`transition-opacity duration-500 ${visibleSteps.has(5) ? "opacity-100" : "opacity-30"}`}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <h3 className="text-sm font-semibold">Step 5: Final Validation</h3>
+                            {currentStep === 5 && (
+                              <span className="text-xs text-muted-foreground animate-pulse">Agent is re-validating...</span>
+                            )}
+                            {visibleSteps.has(5) && currentStep !== 5 && (
+                              <span className="text-xs text-green-600 dark:text-green-400">✓ Complete</span>
+                            )}
+                          </div>
+                          {visibleSteps.has(5) && autoFixResult ? (
+                            autoFixResult.finalResolved ? (
+                              <div className="text-sm bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded p-2">
+                                <p className="font-medium text-green-800 dark:text-green-200">✓ Resolved</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  All constraints satisfied. View is now compliant.
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="text-sm bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded p-2">
+                                <p className="text-yellow-800 dark:text-yellow-200">Still has violations</p>
+                              </div>
+                            )
+                          ) : (
+                            <div className="text-sm text-muted-foreground italic">Waiting for final validation...</div>
+                          )}
+                        </div>
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+                )}
               </Tabs>
             </CardContent>
           </Card>
@@ -642,7 +1024,17 @@ export default function Home() {
             <CardContent className="h-[calc(100%-5rem)]">
               <ScrollArea className="h-full w-full rounded-md border border-border p-8">
                 <div className="flex flex-col items-center justify-center min-h-[200px] gap-4">
-                  {errors.length > 0 ? (
+                  {showAutoFixFlow && autoFixResult && autoFixResult.appliedConstraints.length > 0 && (
+                    <div className="w-full mb-4 p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-md">
+                      <p className="text-sm font-semibold text-green-800 dark:text-green-200 mb-1">✓ Resolution Applied</p>
+                      {autoFixResult.appliedConstraints.map((applied, idx) => (
+                        <p key={idx} className="text-xs text-green-700 dark:text-green-300">
+                          {applied.resolution || applied.message}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {errors.length > 0 && !showAutoFixFlow ? (
                     <div className="text-center space-y-3">
                       <p className="text-lg font-medium">
                         Design Model
@@ -699,6 +1091,16 @@ export default function Home() {
           </a>
         </p>
       </footer>
+
+      {/* Health Dialog */}
+      <HealthDialog
+        open={healthDialogOpen}
+        onOpenChange={setHealthDialogOpen}
+        health={healthSummary}
+        onRecompute={() => {
+          setLastSynced(Date.now());
+        }}
+      />
     </div>
   );
 }

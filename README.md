@@ -241,6 +241,52 @@ Create two primary buttons
 
 ---
 
+## MCP Server and Auto-Fix
+
+The Design Model exposes an MCP (Model Context Protocol) server that allows AI agents to validate view specs, suggest fixes for constraint violations, and apply those fixes automatically.
+
+### Running the MCP Server
+
+1. Install dependencies (if not already done):
+```bash
+npm install
+```
+
+2. Run the MCP server:
+```bash
+npm run mcp:dev
+```
+
+The server runs on stdio and exposes the following tools:
+
+- **getDesignModel()** - Returns tokens, contracts, and enabled constraints metadata
+- **validate(viewSpec, enabledConstraints)** - Validates a view spec against constraints (read-only)
+- **suggestFixes(viewSpec, enabledConstraints, violations)** - Suggests JSON patch operations to fix violations
+- **applyFixes(viewSpec, fixes)** - Applies JSON patch operations to a view spec
+
+### Auto-Fix Demo
+
+In the demo app, you can use the "Run with MCP (Auto-fix)" button to see the auto-fix flow in action:
+
+1. Create a prompt with constraint violations (e.g., "Create two primary buttons")
+2. Add the "Only one primary button per view" constraint
+3. Click "Run with MCP (Auto-fix)"
+4. The system will:
+   - Validate and detect violations
+   - Suggest fixes (downgrade second primary button to secondary)
+   - Apply the fixes
+   - Re-validate to confirm compliance
+   - Show the resolution flow with helpful explanations
+
+The auto-fix flow displays:
+- **Constraint triggered**: Initial violations detected
+- **Suggested fixes**: JSON patch operations
+- **Resolution applied**: What constraints fired and what they did
+- **Node decisions**: Actions applied to specific nodes
+- **Final state**: Compliant view with resolved components
+
+---
+
 ## Technology Stack
 
 - **Next.js 16** - App Router with TypeScript
@@ -259,6 +305,18 @@ The resolver and renderer logic are fully implemented. The system:
 - Enforces design constraints
 - Resolves design tokens to CSS values
 - Renders pure HTML elements with inline styles
+- Provides MCP server for AI agent integration
+- Supports auto-fix for constraint violations
+
+### Project Structure
+
+- `/tokens` - Design tokens (colors, spacing, typography, etc.)
+- `/contracts` - Component contracts (props, variants, defaults)
+- `/constraints` - Design constraints (rules and limits)
+- `/resolver` - Core resolution logic (parseIntent, resolveComponent, validate, suggestFixes)
+- `/renderer` - Component renderers (pure React components)
+- `/mcp` - MCP server implementation
+- `/app` - Next.js demo application
 
 ---
 

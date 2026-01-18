@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "outDir": "./mcp/dist",
+    "rootDir": "./mcp",
+    "noEmit": false
+  },
+  "include": ["mcp/**/*.ts"],
+  "exclude": ["node_modules", "mcp/dist"]
+}
